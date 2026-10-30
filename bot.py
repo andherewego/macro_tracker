@@ -303,13 +303,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
   )
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
+      def do_GET(self):
+        body = b"OK"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(b"OK")
+        self.wfile.write(body)
 
-    def log_message(self, format, *args):
+      def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+
+      def log_message(self, format, *args):
         return  # Suppress health check ping noise in logs
 
 def run_dummy_web_server():
@@ -319,7 +327,6 @@ def run_dummy_web_server():
 
 # Start dummy server in a background thread before starting Telegram polling
 threading.Thread(target=run_dummy_web_server, daemon=True).start()
-
 
 
 # --- Main entrypoint ---
