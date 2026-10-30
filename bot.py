@@ -198,9 +198,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   try:
         today = datetime.date.today().isoformat()
-        with sqlite3.connect("macros.db") as conn:
+        with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM meals WHERE date = ?", (today,))
+            cursor.execute("DELETE FROM logs WHERE date = ?", (today,))
             conn.commit()
         await update.message.reply_text("🧹 Today's logs have been cleared! You can log fresh.")
   except Exception as e:
