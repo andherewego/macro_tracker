@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import sqlite3
 import threading
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -158,18 +159,26 @@ def parse_food_with_gemini(
       else "Estimate the food items, portions, calories, and macros from this meal plate photo."
   )
   contents.append(prompt_text)
-
-  response = client.models.generate_content(
-      model="gemini-3.8-flash",
-      contents=contents,
-      config=types.GenerateContentConfig(
+  
+  for attempt in range(3):
+    try:
+      response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=contents,
+        config=dict(
           system_instruction=SYSTEM_INSTRUCTION,
           response_mime_type="application/json",
           response_schema=MealParseResult,
           temperature=0.1,
-      ),
-  )
-  return MealParseResult.model_validate_json(response.text)
+        ),
+      )
+      return MealParseResult.model_validate_json(response.text)
+    except Exception as e:
+      err_str = str(e)
+      if ("503" in err_str or "UNAVAILABLE" in err_str) and attempt < 2:
+        time.sleep(2)
+        continue
+      raise e
 
 
 # --- Telegram Command Handlers ---
