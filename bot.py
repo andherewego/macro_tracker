@@ -1,3 +1,5 @@
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import threading
 import datetime
 import os
 import sqlite3
@@ -278,6 +280,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
       image_bytes=bytes(photo_bytes),
       is_photo=True,
   )
+def run_dummy_web_server():
+  port = int(os.environ.get("PORT", 8080))
+  server_address = ("0.0.0.0", port)
+  httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+  httpd.serve_forever()
+
 
 
 def main():
@@ -286,6 +294,9 @@ def main():
   if not token:
     print("Error: TELEGRAM_BOT_TOKEN missing in .env")
     return
+
+  # Start the lightweight web port for Render's free tier
+  threading.Thread(target=run_dummy_web_server, daemon=True).start()
 
   app = ApplicationBuilder().token(token).build()
   app.add_handler(CommandHandler("start", start_command))
