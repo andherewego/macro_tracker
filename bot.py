@@ -196,12 +196,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN)
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.date.today().isoformat()
-    with sqlite3.connect("macros.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM meals WHERE date = ?", (today,))
-        conn.commit()
-    await update.message.reply_text("🧹 Today's logs have been cleared! You can log fresh.")
+  try:
+        today = datetime.date.today().isoformat()
+        with sqlite3.connect("macros.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM meals WHERE date = ?", (today,))
+            conn.commit()
+        await update.message.reply_text("🧹 Today's logs have been cleared! You can log fresh.")
+  except Exception as e:
+        await update.message.reply_text(f"⚠️ Reset failed with error: {e}")
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
