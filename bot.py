@@ -301,34 +301,26 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
       image_bytes=bytes(photo_bytes),
       is_photo=True,
   )
-# --- Lightweight & Secure Health Check Server for Render Free Tier ---
-class HealthCheckHandler(BaseHTTPRequestHandler):
-
-  def do_GET(self):
-    self.send_response(200)
-    self.send_header("Content-type", "text/plain")
-    self.end_headers()
-    self.wfile.write(b"OK")
-
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain")
+        self.send_header("Content-Type", "text/plain")
         self.end_headers()
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        return # suppress spammy log output
-
+        return  # Suppress health check ping noise in logs
 
 def run_dummy_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
-# Start dummy server in a separate thread BEFORE starting telegram polling
+# Start dummy server in a background thread before starting Telegram polling
 threading.Thread(target=run_dummy_web_server, daemon=True).start()
+
+
 
 # --- Main entrypoint ---
 def main():
