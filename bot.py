@@ -1,8 +1,8 @@
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import threading
 import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import sqlite3
+import threading
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -280,14 +280,26 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
       image_bytes=bytes(photo_bytes),
       is_photo=True,
   )
+# --- Lightweight & Secure Health Check Server for Render Free Tier ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+
+  def do_GET(self):
+    self.send_response(200)
+    self.send_header("Content-type", "text/plain")
+    self.end_headers()
+    self.wfile.write(b"OK")
+
+  def log_message(self, format, *args):
+    return  # Suppress logging health check pings in the terminal
+
+
 def run_dummy_web_server():
   port = int(os.environ.get("PORT", 8080))
-  server_address = ("0.0.0.0", port)
-  httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+  httpd = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
   httpd.serve_forever()
 
 
-
+# --- Main entrypoint ---
 def main():
   init_db()
   token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -295,7 +307,7 @@ def main():
     print("Error: TELEGRAM_BOT_TOKEN missing in .env")
     return
 
-  # Start the lightweight web port for Render's free tier
+  # Start the web port thread for Render
   threading.Thread(target=run_dummy_web_server, daemon=True).start()
 
   app = ApplicationBuilder().token(token).build()
