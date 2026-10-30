@@ -310,15 +310,25 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     self.end_headers()
     self.wfile.write(b"OK")
 
-  def log_message(self, format, *args):
-    return  # Suppress logging health check pings in the terminal
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        return # suppress spammy log output
 
 
 def run_dummy_web_server():
-  port = int(os.environ.get("PORT", 8080))
-  httpd = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-  httpd.serve_forever()
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
 
+# Start dummy server in a separate thread BEFORE starting telegram polling
+threading.Thread(target=run_dummy_web_server, daemon=True).start()
 
 # --- Main entrypoint ---
 def main():
@@ -342,7 +352,7 @@ def main():
   app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
   print("🚀 Macro Tracker Bot (Text + Vision) is running on Telegram...")
-  app.run_polling()
+  app.run_polling(drop_pending_updates=False)
 
 
 if __name__ == "__main__":
