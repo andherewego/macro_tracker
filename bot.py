@@ -338,9 +338,7 @@ def main():
     print("Error: TELEGRAM_BOT_TOKEN missing in .env")
     return
 
-  # Start the web port thread for Render
-  threading.Thread(target=run_dummy_web_server, daemon=True).start()
-
+  
   app = ApplicationBuilder().token(token).build()
   app.add_handler(CommandHandler("start", start_command))
   app.add_handler(CommandHandler("summary", summary_command))
