@@ -185,14 +185,23 @@ def parse_food_with_gemini(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome = (
       "👋 *Welcome to your Precision Macro Tracker!*\n\n"
-      "Log meals anytime via text or photo:\n"
-      "• *Text:* `P1 Lunch: 3 chapatis, 1 bowl pithla, cucumber salad with curd`\n"
-      "• *Photo:* Send a plate photo directly (add `P1` or `P2` as a caption)\n"
-      "• *Brand lookup:* `P2: 100g iD high protein paneer with 130g dry Del Monte spaghetti`\n\n"
-      "Commands:\n"
-      "/summary - Check today's running calories, macros, and remaining deficits."
+        "Log meals anytime via text or photo:\n"
+        "• *Text:* `P1 Lunch: 3 chapatis, 1 bowl pithla, cucumber salad with curd`\n"
+        "• *Photo:* Send a plate photo directly (add `P1` or `P2` as caption)\n"
+        "• *Brand lookup:* `P2: 100g iD high protein paneer with 130g dry Del Monte pasta`\n\n"
+        "*Commands:*\n"
+        "/summary - Check today's running calories, macros, and remaining deficits.\n"
+        "/reset - Clear today's logged entries."
   )
   await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN)
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    today = datetime.date.today().isoformat()
+    with sqlite3.connect("macros.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM meals WHERE date = ?", (today,))
+        conn.commit()
+    await update.message.reply_text("🧹 Today's logs have been cleared! You can log fresh.")
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,6 +331,8 @@ def main():
   app = ApplicationBuilder().token(token).build()
   app.add_handler(CommandHandler("start", start_command))
   app.add_handler(CommandHandler("summary", summary_command))
+  app.add_handler(CommandHandler("reset", reset_command))
+  app.add_handler(CommandHandler("clear", reset_command))
   app.add_handler(
       MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
   )
