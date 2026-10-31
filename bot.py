@@ -1,7 +1,9 @@
 import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
-import sqlite3
+import json
+import gspread
+from zoneinfo import ZoneInfo
 import threading
 import time
 from dotenv import load_dotenv
@@ -29,64 +31,67 @@ TARGETS = {
     "person 2": {"maintenance": 2250, "target": 1750, "label": "Person 2"},
 }
 
-# --- Database Management ---
-DB_FILE = "tracker.db"
+# --- Google Sheets Persistence Setup ---
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
 
-def init_db():
-  with sqlite3.connect(DB_FILE) as conn:
-    cursor = conn.cursor()
-    cursor.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT,
-                person TEXT,
-                meal_type TEXT,
-                items_summary TEXT,
-                calories REAL,
-                protein REAL,
-                carbs REAL,
-                fat REAL
-            )
-        """)
-    conn.commit()
+def get_sheet():
+  if SERVICE_ACCOUNT_JSON:
+    creds_dict = json.loads(SERVICE_ACCOUNT_JSON)
+    gc = gspread.service_account_from_dict(creds_dict)
+  else:
+    # Fallback if testing locally with a credentials file in root
+    gc = gspread.service_account(filename="service_account.json")
+  return gc.open_by_key(SPREADSHEET_ID).sheet1
+
+
+def get_today_ist():
+  return datetime.datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
 
 
 def save_meal(person, meal_type, items_summary, cals, prot, carbs, fat):
-  today = datetime.date.today().isoformat()
-  with sqlite3.connect(DB_FILE) as conn:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-            INSERT INTO logs (date, person, meal_type, items_summary, calories, protein, carbs, fat)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (today, person, meal_type, items_summary, cals, prot, carbs, fat),
-    )
-    conn.commit()
+  today = get_today_ist()
+  sheet = get_sheet()
+  sheet.append_row([
+      today,
+      person,
+      meal_type,
+      items_summary,
+      round(cals, 1),
+      round(prot, 1),
+      round(carbs, 1),
+      round(fat, 1),
+  ])
 
 
 def get_daily_totals(person):
-  today = datetime.date.today().isoformat()
-  with sqlite3.connect(DB_FILE) as conn:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-            SELECT SUM(calories), SUM(protein), SUM(carbs), SUM(fat)
-            FROM logs
-            WHERE date = ? AND person = ?
-        """,
-        (today, person),
-    )
-    row = cursor.fetchone()
-    if row and row[0]:
-      return {
-          "calories": round(row[0], 1),
-          "protein": round(row[1], 1),
-          "carbs": round(row[2], 1),
-          "fat": round(row[3], 1),
-      }
-    return {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+  today = get_today_ist()
+  sheet = get_sheet()
+  rows = sheet.get_all_records()
+
+  total_cals = 0.0
+  total_prot = 0.0
+  total_carbs = 0.0
+  total_fat = 0.0
+
+  for r in rows:
+    # Matches today's date in IST and the specific person
+    if (
+        str(r.get("Date")) == today
+        and str(r.get("Person", "")).strip().lower() == person.lower()
+    ):
+      total_cals += float(r.get("Calories", 0) or 0)
+      total_prot += float(r.get("Protein", 0) or 0)
+      total_carbs += float(r.get("Carbs", 0) or 0)
+      total_fat += float(r.get("Fat", 0) or 0)
+
+  return {
+      "calories": round(total_cals, 1),
+      "protein": round(total_prot, 1),
+      "carbs": round(total_carbs, 1),
+      "fat": round(total_fat, 1),
+  }
 
 
 # --- Structured Output Schema ---
@@ -197,18 +202,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   try:
-        today = datetime.date.today().isoformat()
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM logs WHERE date = ?", (today,))
-            conn.commit()
-        await update.message.reply_text("🧹 Today's logs have been cleared! You can log fresh.")
+    today = get_today_ist()
+    sheet = get_sheet()
+    rows = sheet.get_all_records()
+
+    # Collect 1-based row indices to delete from bottom up
+    rows_to_delete = []
+    for i, r in enumerate(rows, start=2):  # Row 1 is header
+      if str(r.get("Date")) == today:
+        rows_to_delete.append(i)
+
+    for row_idx in reversed(rows_to_delete):
+      sheet.delete_rows(row_idx)
+
+    await update.message.reply_text(
+        "🧹 Today's logs have been cleared from Google Sheets!"
+    )
   except Exception as e:
-        await update.message.reply_text(f"⚠️ Reset failed with error: {e}")
+    await update.message.reply_text(f"⚠️ Reset failed with error: {e}")
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  today_date = datetime.date.today().strftime("%B %d, %Y")
+  today_date = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%B %d, %Y")
   msg = f"📊 *Daily Summary for {today_date}*\n"
   msg += "═" * 30 + "\n\n"
 
@@ -331,7 +346,7 @@ threading.Thread(target=run_dummy_web_server, daemon=True).start()
 
 # --- Main entrypoint ---
 def main():
-  init_db()
+  
   token = os.getenv("TELEGRAM_BOT_TOKEN")
   if not token:
     print("Error: TELEGRAM_BOT_TOKEN missing in .env")
