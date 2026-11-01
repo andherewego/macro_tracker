@@ -195,6 +195,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• *Photo:* Send a plate photo directly (add `P1` or `P2` as caption)\n"
         "• *Brand lookup:* `P2: 100g iD high protein paneer with 130g dry Del Monte pasta`\n\n"
         "*Commands:*\n"
+        "/check <food> - Estimate calories & macros without logging.\n"
+        "/suggest - Get food ideas tailored to your remaining budget.\n"
         "/summary - Check today's running calories, macros, and remaining deficits.\n"
         "/reset - Clear today's logged entries."
   )
@@ -244,6 +246,100 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
   await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
+async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  query = " ".join(context.args) if context.args else ""
+  if not query:
+    await update.message.reply_text(
+        "ℹ️ *Provide the food to check:*\n"
+        "`/check 2 besan chillas with curd`\n"
+        "`/check 150g cooked rice and 1 scoop whey`",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return
+
+  status_msg = await update.message.reply_text(
+      "🔍 *Estimating macros without logging...*", parse_mode=ParseMode.MARKDOWN
+  )
+  try:
+    parsed = parse_food_with_gemini(text=query)
+
+    response = f"🔍 *Estimation (Not Logged)* ({parsed.meal_type})\n"
+    for it in parsed.items:
+      response += f"• {it.name} ({it.portion}): ~{round(it.calories)} kcal | {round(it.protein, 1)}g P\n"
+
+    response += "\n" + "─" * 26 + "\n"
+    response += f"*Estimated Total:* ~{round(parsed.total_calories)} kcal\n"
+    response += (
+        f"*Protein:* {round(parsed.total_protein, 1)}g | *Carbs:*"
+        f" {round(parsed.total_carbs, 1)}g | *Fat:* {round(parsed.total_fat, 1)}g\n"
+    )
+    response += "\n_This entry was not saved to your sheet._"
+
+    await status_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
+  except Exception as e:
+    await status_msg.edit_text(f"❌ Could not estimate entry: {str(e)}")
+
+def generate_food_suggestions(rem_cals: float, rem_prot: float) -> str:
+  prompt = f"""
+    The user is following a calorie-restricted Indian diet with high protein priorities.
+    They currently have ~{round(rem_cals)} kcal and ~{round(rem_prot, 1)}g of protein remaining in their budget for today.
+    
+    Suggest 3 distinct, practical food or snack ideas that fit strictly within ~{round(rem_cals)} kcal.
+    Prioritize Indian staple foods and everyday pantry items (e.g. eggs, paneer, curd/dahi, roasted chana/sattu, chicken breast, whey, moong sprouts, soya chunks, cucumber/tomato salad).
+    
+    Rules for output:
+    - 3 numbered options.
+    - Specify exact home-friendly portion size (grams, bowls/katoris, or pieces).
+    - Give approximate kcal and protein for each suggestion.
+    - Keep descriptions punchy without unnecessary conversational filler.
+    """
+  response = client.models.generate_content(
+      model="gemini-2.5-flash", contents=prompt
+  )
+  return response.text.strip()
+
+
+async def suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  status_msg = await update.message.reply_text(
+      "💡 *Analyzing remaining budget and cooking ideas...*",
+      parse_mode=ParseMode.MARKDOWN,
+  )
+  try:
+    # Allows targeting person: /suggest or /suggest p2
+    person_arg = context.args[0].lower() if context.args else "person 1"
+    person_key = (
+        "person 2"
+        if ("2" in person_arg or "p2" in person_arg or "she" in person_arg)
+        else "person 1"
+    )
+
+    totals = get_daily_totals(person_key)
+    target = TARGETS[person_key]["target"]
+    rem_cals = round(target - totals["calories"], 1)
+
+    # Standard reference baseline for protein target (~140g) minus already consumed
+    target_protein = 140.0
+    rem_prot = max(0.0, round(target_protein - totals["protein"], 1))
+
+    if rem_cals <= 80:
+      await status_msg.edit_text(
+          f"⚠️ You only have *~{round(rem_cals)} kcal* remaining today for"
+          f" *{TARGETS[person_key]['label']}*.\nRecommended: Black coffee,"
+          " warm water, green tea, or sliced cucumber with chaat masala.",
+          parse_mode=ParseMode.MARKDOWN,
+      )
+      return
+
+    suggestions = generate_food_suggestions(rem_cals, rem_prot)
+
+    msg = f"💡 *Meal Suggestions for {TARGETS[person_key]['label']}*\n"
+    msg += f"• *Remaining Budget:* ~{round(rem_cals)} kcal | ~{round(rem_prot, 1)}g protein\n"
+    msg += "═" * 30 + "\n\n"
+    msg += suggestions
+
+    await status_msg.edit_text(msg, parse_mode=ParseMode.MARKDOWN)
+  except Exception as e:
+    await status_msg.edit_text(f"❌ Failed to generate suggestions: {str(e)}")
 
 async def process_and_reply(
     update: Update,
@@ -358,6 +454,8 @@ def main():
   app.add_handler(CommandHandler("summary", summary_command))
   app.add_handler(CommandHandler("reset", reset_command))
   app.add_handler(CommandHandler("clear", reset_command))
+  app.add_handler(CommandHandler(["check", "ask", "estimate"], check_command))
+  app.add_handler(CommandHandler(["suggest", "ideas"], suggest_command))
   app.add_handler(
       MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
   )
