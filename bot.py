@@ -27,8 +27,8 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Personal Calorie & Deficit Target Configuration
 TARGETS = {
-    "person 1": {"maintenance": 2550, "target": 2050, "label": "Person 1"},
-    "person 2": {"maintenance": 2250, "target": 1750, "label": "Person 2"},
+    "chai": {"maintenance": 2550, "target": 2050, "label": "Chai"},
+    "swara": {"maintenance": 2250, "target": 1750, "label": "Swara"},
 }
 
 # --- Google Sheets Persistence Setup ---
@@ -108,7 +108,7 @@ class FoodItem(BaseModel):
 
 class MealParseResult(BaseModel):
   person: str = Field(
-      description="'person 1' or 'person 2'. Default to 'person 1' if not specified."
+      description="'chai' or 'swara'. Default to 'chai' if not specified."
   )
   meal_type: str = Field(
       description="Breakfast, Lunch, Snack, Dinner, or Workout"
@@ -139,9 +139,9 @@ Strict Nutrition Rules & Conversions:
    - iD Fresh High Protein Paneer: ~163 kcal, 28g protein per 100g.
    - ON Gold Standard Whey: 1 scoop = ~120 kcal (24g P); 1.5 scoops = ~180 kcal (36g P).
 3. Attribution Rules:
-   - If text/caption mentions 'P1', 'Person 1', or 'me', assign person='person 1'.
-   - If text/caption mentions 'P2', 'Person 2', or 'she', assign person='person 2'.
-   - If unstated, default to 'person 1'.
+   - If text/caption mentions 'chai', 'chaitanya', 'p1', or 'me', assign person='chai'.
+   - If text/caption mentions 'swara', 'swaralee', 'p2', or 'she', assign person='swara'.
+   - If unstated or ambiguous, default to 'chai'.
 4. Photo Analysis:
    - Identify visual components on the plate (rotis, rice mounds, katoris of sabji/dal/pithla, curd, paneer).
    - Estimate realistic home-cooked portion weights in grams/katoris.
@@ -229,7 +229,7 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   msg = f"📊 *Daily Summary for {today_date}*\n"
   msg += "═" * 30 + "\n\n"
 
-  for key in ["person 1", "person 2"]:
+  for key in ["chai", "swara"]:
     stats = get_daily_totals(key)
     target = TARGETS[key]["target"]
     maint = TARGETS[key]["maintenance"]
@@ -306,11 +306,11 @@ async def suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   )
   try:
     # Allows targeting person: /suggest or /suggest p2
-    person_arg = context.args[0].lower() if context.args else "person 1"
+    person_arg = context.args[0].lower() if context.args else "chai"
     person_key = (
-        "person 2"
-        if ("2" in person_arg or "p2" in person_arg or "she" in person_arg)
-        else "person 1"
+        "swara"
+        if any(k in person_arg for k in ["swara", "p2", "she", "s"])
+        else "chai"
     )
 
     totals = get_daily_totals(person_key)
@@ -353,7 +353,7 @@ async def process_and_reply(
 
     person_key = parsed.person.lower()
     if person_key not in TARGETS:
-      person_key = "person 1"
+      person_key = "chai"
 
     items_desc = ", ".join(
         [f"{item.portion} {item.name}" for item in parsed.items]
